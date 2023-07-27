@@ -1,60 +1,62 @@
 
-import time
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, MultiPoint, MultiPolygon, LineString
+from shapely.ops import unary_union
+from shapely.geometry import Point, MultiPoint, MultiPolygon, LineString
+from shapely.ops import unary_union
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+from shapely.geometry import Point
+from shapely.ops import unary_union
+from shapely.plotting import plot_polygon
 
-start_time = time.time()
 
 class Intersection:
     def __init__(self, trajectory_vehicle, trajectory_ped):
         self.trajectory_vehicle = trajectory_vehicle
         self.trajectory_ped = trajectory_ped
-    
-    def create_circle(self, center):
-        # Create a Shapely circle with the given center and radius
-        circle = Point(center).buffer(1)
-        return circle
+        self.vehicle_radius = 1 # the distance between the center of the vehicle and its front
+
+    def create_circles(self):
+        circles = [Point(center).buffer(self.vehicle_radius) for center in self.trajectory_vehicle]
+        return unary_union(circles)
 
     def find_intersection(self):
-        # Create circles for each point in the vehicle trajectory
-        circles = [self.create_circle(center) for center in self.trajectory_vehicle]
+        # Create circles for each point in the vehicle trajectory and merge them
+        merged_circles = self.create_circles()
 
-        # Create an empty list to store the intersection points
-        intersections = []
-        intersection_circles = []
+        # Create a LineString for the pedestrian trajectory
+        pedestrian_line = LineString(self.trajectory_ped)
 
-        # Iterate over each circle and check if the line intersects
-        for circle in circles:
-            if LineString(self.trajectory_ped).intersects(circle):
-                centroid = circle.centroid
-                intersection_circles.append((centroid.x, centroid.y))
-                intersection = LineString(self.trajectory_ped).intersection(circle)
-                #print("intersection",intersection)
-                intersection_line = LineString(self.trajectory_ped).intersection(circle)
+        # Find the intersection points between the merged circles and the pedestrian trajectory
+        intersections = merged_circles.intersection(pedestrian_line)
+        intersection_circle_center = []
 
-                # Access the individual points from the intersection LineString
-                for point in intersection_line.coords:
-                    x, y = point
-                    #print("Intersection point: ({}, {})".format(x, y))
-                    intersections.append((x,y))
 
-                # if intersection.geom_type.upper() == 'POINT':
-                #     intersections.append((intersection.x, intersection.y))
-                # elif intersection.geom_type.upper() == 'MULTIPOINT':
-                #     for point in intersection:
-                #         intersections.append((point.x, point.y))
-        print("intersection_circles",intersection_circles)
-        return intersections
 
-    def print_intersection(self):
-        intersections = self.find_intersection()
-        if len(intersections) == 0:
-            print("No intersections found.")
+
+        # Check if the intersection is a LineString
+        if intersections.geom_type == 'LineString':
+            # Access individual points along the LineString
+            intersection_points_list = list(intersections.coords)
+            print("intersection_points_list ", intersection_points_list)
         else:
-            print("Intersections found at the following points:")
-            for intersection in intersections:
-                print(intersection)
+            # If it's not a LineString, convert it to a list of (x, y) tuples
+            intersection_points_list = [(point.x, point.y) for point in intersections]
+            print("intersection_points_list ", intersection_points_list)
 
+
+        if merged_circles.intersection(pedestrian_line):
+            for intersection_point in intersection_points_list:
+                point = Point(intersection_point)
+                for center in self.trajectory_vehicle:
+                    circle_center_point = Point(center)
+                    if (point.distance(circle_center_point) <= self.vehicle_radius):
+                        intersection_circle_center.append(center)
+
+        print("intersection_circle_center: ",intersection_circle_center)
+        print("Intersection Points geom_type:", intersections.geom_type)
+
+        return  intersection_circle_center
 
 # Define the trajectories as lists of (x, y) points
 trajectory_pedestrian = [(12, 1), (11, 1.5), (10, 1.8), (9, 2.5), (8, 3), (7, 3.5), (6, 4), (5, 4.25), (4, 4.6), (3, 4.7)]
@@ -63,27 +65,39 @@ trajectory_vehicle = [(0, 2), (0.05, 2.15875), (0.1, 2.314), (0.15, 2.46575), (0
 # Create an instance of the Intersection class
 intersection = Intersection(trajectory_vehicle, trajectory_pedestrian)
 
-# Find and print the intersections
-intersection.print_intersection()
-a=intersection.find_intersection()
-end_time = time.time()
-# Plot the trajectories and circles
-x1, y1 = zip(*trajectory_pedestrian)
-x2, y2 = zip(*trajectory_vehicle)
-x3,y3 = zip(*a)
-plt.plot(x1, y1, 'o-', label='Trajectory pedestrian')
-plt.plot(x3, y3, 'o-', label='inter')
-for i, center in enumerate(trajectory_vehicle):
-    circle = intersection.create_circle(center)
-    label = 'vehicle' if i == 0 else None
-    plt.gca().add_patch(plt.Circle(center, 4.4, fc='none', ec='blue', label=label))
 
-plt.title('Trajectories with Circle Intersection')
+
+# Create an instance of the Intersection class
+intersection = Intersection(trajectory_vehicle, trajectory_pedestrian)
+
+# Find the intersections
+intersection_points = intersection.find_intersection()
+
+# Print the intersection points
+print("Intersection Points:", intersection_points)
+
+# Plot the unary_union(circles) and pedestrian trajectory
+circles = [Point(center).buffer(4.4) for center in trajectory_vehicle]
+circles = intersection.create_circles()
+pedestrian_line = LineString(trajectory_pedestrian)
+vehicle_line = LineString(trajectory_vehicle)
+
+plt.figure(figsize=(8, 6))
+u = unary_union(circles)
+BLUE = '#6699cc'
+plot_polygon(u, add_points=False, color=BLUE)
+x_ped, y_ped = pedestrian_line.xy
+x_veh, y_veh = vehicle_line.xy
+plt.plot(x_ped, y_ped, 'r-', label='Pedestrian trajectory')
+plt.plot(x_veh, y_veh, 'r-', label='vehicle trajectory')
+
+# Plot the intersection points
+x_inter, y_inter = zip(*intersection_points)
+plt.scatter(x_inter, y_inter, color='g', label='Intersection Points')
+
 plt.xlabel('X')
 plt.ylabel('Y')
 plt.legend()
+plt.title('Intersection Points')
+plt.axis('equal')
 plt.show()
-
-
-
-print("time taken = ", end_time-start_time)
